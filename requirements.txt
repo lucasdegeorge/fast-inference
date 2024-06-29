@@ -1,0 +1,7 @@
+torch
+numpy
+sentencepiece
+tiktoken
+pre-commit
+black
+collection

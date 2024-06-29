@@ -1,0 +1,1 @@
+python3 main.py --model_name $1 --prompt "Hello, my name is" && python3 main.py --compile --model_name $1 --prompt "Hello, my name is" && python3 main.py --compile --model_name $1 --prompt "Hello, my name is" --quantization int8 && python3 main.py --compile --model_name $1 --prompt "Hello, my name is" --quantization int4
