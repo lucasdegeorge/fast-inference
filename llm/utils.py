@@ -35,6 +35,16 @@ transformer_configs = {
         intermediate_size=14336,
         vocab_size=128256,
     ),
+    "Meta-Llama-3-8B-Instruct": dict(
+        checkpoint_path="/home/lucas/Documents/checkpoints/meta-llama/Meta-Llama-3-8B-Instruct",
+        block_size=8192,
+        n_layers=32,
+        n_heads=32,
+        n_local_heads=8,
+        dim=4096,
+        intermediate_size=14336,
+        vocab_size=128256,
+    ),
     "TinyLlama-1.1B-Chat-v1.0": dict(
         checkpoint_path="checkpoints/TinyLlama/TinyLlama-1.1B-Chat-v1.0",
         n_layers=22,

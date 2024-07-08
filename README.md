@@ -17,7 +17,8 @@ paligemma-3b-mix-224
 ```text
 Llama-2-7b-chat-hf
 Llama-2-13b-chat-hf
-Meta-LLama-3-8B
+Meta-Llama-3-8B
+Meta-Llama-3-8B-Instructs
 Mistral-7B-Instruct-v0.2
 TinyLlama-1.1B-Chat-v1.0
 TinyLlama-1.1B-intermediate-step-1431k-3T
@@ -66,6 +67,26 @@ print(model.generate(prompt, image, 200, temperature=0.8, top_k=200))
 ```
 
 
+### LLM Chat inference with Llama-3 Instruct
+
+```python
+from model_zoo import Llama3
+
+model = Llama3(model_name="Meta-Llama-3-8B-Instruct", quant="int8")
+
+dialog = [
+    {"role": "user", "content": "Hello!"},
+    {"role": "assistant", "content": "Hi! How can I help you today?"},
+    {"role": "user", "content": "I need help with my computer."},
+]
+
+updated_dialog = model.generate(prompt, 200, clean_dialog=True, temperature=0.8, top_k=200)
+
+## Print the answer of the model
+print(updated_dialog[-1]["content"])
+```
+
+
 ### LLM inference
 
 ```python
@@ -111,6 +132,6 @@ bash ./download_hf/prepare_paligemma.sh $MODEL_REPO
 
 - PaliGemma Vision encoder implementation without HF (in progress)
 - Add new VLM models
-- Add chat-template support for Llama-3 (in progress) and VLMs
+- Add chat-template support for SentencePiece-based LLMs and VLMs
 - Add multi-sample generation
 - Batched inference for LLM and VLM

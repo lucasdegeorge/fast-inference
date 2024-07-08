@@ -5,10 +5,11 @@ from typing import Tuple
 import torch._dynamo.config
 import torch._inductor.config
 import numpy as np
-from typing import Dict, List, Tuple, Union
+from typing import Tuple, Union
 import contextlib
 import os
 import sys
+from trycast import isassignable
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
@@ -17,6 +18,7 @@ from llm.architecture.base import Transformer
 from llm.tokenizer import get_tokenizer
 from llm.utils import sample
 from llm.architecture.gemma import TransformerForGemma
+from llm.chat import Dialog
 
 from jinja2.exceptions import TemplateError
 from jinja2.sandbox import ImmutableSandboxedEnvironment
@@ -127,7 +129,7 @@ class LLMBase:
                 new_tokens.append(next_token.clone())
                 new_probs.append(next_prob.clone())
                 cur_token = next_token.view(1, -1)
-                if stop_first_eos and next_token == self.eos_id:
+                if stop_first_eos and next_token in self.tokenizer.stop_tokens:
                     # print(f"Found EOS token at position {i}")
                     break
         return new_tokens, new_probs
@@ -143,12 +145,13 @@ class LLMBase:
     @torch.no_grad()
     def generate(
         self,
-        prompt: torch.Tensor,
+        prompt: Union[torch.Tensor, str, Dialog],
         max_new_tokens: int,
         do_decode: bool = True,
         stop_first_eos: bool = True,
+        clean_dialog: bool = False,
         **sampling_kwargs,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, str, Dialog]:
 
         # Preprocessing
         prof = contextlib.nullcontext()
@@ -159,8 +162,18 @@ class LLMBase:
             )
             # self.prefill = torch.compile(self.prefill, fullgraph=True, dynamic=True)
 
+        if clean_dialog and not (isassignable(prompt, Dialog)):
+            raise ValueError("clean_dialog can only be used with Dialog inputs.")
+
+        if clean_dialog and not (do_decode):
+            raise ValueError("clean_dialog can only be used with do_decode=True.")
+
         if isinstance(prompt, str):
             prompt = self.tokenize(prompt, bos=True)
+
+        if isassignable(prompt, Dialog):
+            dialog = prompt
+            prompt = self.apply_chat_template(prompt, return_tensor=True)
 
         # Generation
         with prof:
@@ -197,92 +210,33 @@ class LLMBase:
             if do_decode:
                 seq = self.tokenizer.decode(seq.tolist())
 
+            if clean_dialog:
+                seq = seq.split("<|end_header_id|>")[-1].split("<|eot_id|>")[0]
+                dialog.append({"role": "llm", "content": seq})
+                return dialog
+
             return seq
 
-    def apply_chat_template(
-        self,
-        conversation: Union[List[Dict[str, str]], List[List[Dict[str, str]]]],
-        add_generation_prompt: bool = False,
-        **kwargs,
-    ):
-        """self.chat_template must be defined before calling this method"""
-
-        try:
-            compiled_template = self._compile_jinja_template(self.chat_template)
-        except NotImplementedError:
-            raise NotImplementedError(
-                "A chat template must be defined before calling this method."
-            )
-
-        if isinstance(conversation, (list, tuple)) and (
-            isinstance(conversation[0], (list, tuple))
-            or hasattr(conversation[0], "messages")
-        ):
-            conversations = conversation
-            is_batched = True
-        else:
-            conversations = [conversation]
-            is_batched = False
-
-        rendered = []
-        template_kwargs = {**self.special_tokens_map, **kwargs}
-        for chat in conversations:
-            if hasattr(chat, "messages"):
-                # Indicates it's a Conversation object
-                chat = chat.messages
-            rendered_chat = compiled_template.render(
-                messages=chat,
-                add_generation_prompt=add_generation_prompt,
-                **self.special_tokens_map,
-            )
-            rendered.append(rendered_chat)
-
-        if not is_batched:
-            rendered = rendered[0]
-
-        return rendered
+    def apply_chat_template(self, conversation, **kwargs) -> Union[str, torch.Tensor]:
+        """
+        This method should be overridden by subclasses.
+        Must return a string or a tensor containing the chat tokens.
+        """
+        raise NotImplementedError("This method should be overridden by subclasses.")
 
     @property
     def chat_template(self):
         """This method should be overridden by subclasses.
+        It is used by SentencePiece based models to format a dialog into a chat prompt.
+
+        For TikToks based models:
+        It should return a ChatFormat object that can be used to encode a dialog into a chat prompt.
+
+        For SentencePiece based models:
         It should return a Jinja template string that can be used to render a chat conversation.
         See the corresponding template in the Hugging Face API
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
-        # Example template
-        # template = (
-        #     "{% if messages[0]['role'] == 'system' %}"
-        #     "{% set loop_messages = messages[1:] %}"  # Extract system message if it's present
-        #     "{% set system_message = messages[0]['content'] %}"
-        #     "{% elif false == true and not '<<SYS>>' in messages[0]['content'] %}"  # Here USE_DEFAULT_PROMPT replaced by "false"
-        #     "{% set loop_messages = messages %}"  # Or use the default system message if the flag is set
-        #     "{% set system_message = 'DEFAULT_SYSTEM_MESSAGE' %}"
-        #     "{% else %}"
-        #     "{% set loop_messages = messages %}"
-        #     "{% set system_message = false %}"
-        #     "{% endif %}"
-        #     "{% for message in loop_messages %}"  # Loop over all non-system messages
-        #     "{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}"
-        #     "{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}"
-        #     "{% endif %}"
-        #     "{% if loop.index0 == 0 and system_message != false %}"  # Embed system message in first message
-        #     "{% set content = '<<SYS>>\\n' + system_message + '\\n<</SYS>>\\n\\n' + message['content'] %}"
-        #     "{% else %}"
-        #     "{% set content = message['content'] %}"
-        #     "{% endif %}"
-        #     "{% if message['role'] == 'user' %}"  # After all of that, handle messages/roles in a fairly normal way
-        #     "{{ bos_token + '[INST] ' + content.strip() + ' [/INST]' }}"
-        #     "{% elif message['role'] == 'system' %}"
-        #     "{{ '<<SYS>>\\n' + content.strip() + '\\n<</SYS>>\\n\\n' }}"
-        #     "{% elif message['role'] == 'assistant' %}"
-        #     "{{ ' '  + content.strip() + ' ' + eos_token }}"
-        #     "{% endif %}"
-        #     "{% endfor %}"
-        # )
-        # default_message = ""
-        # template = template.replace("DEFAULT_SYSTEM_MESSAGE", default_message)
-
-        # return template
 
     def _compile_jinja_template(self, chat_template):
         def raise_exception(message):
