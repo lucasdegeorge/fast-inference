@@ -5,7 +5,6 @@ import torch.nn as nn
 from dataclasses import dataclass
 
 from vlm.utils import vlm_configs, vlm_configs
-from vlm.image_encoder import ViTArgs
 from llm.architecture.base import (
     LLMArgs,
     Transformer,
@@ -23,7 +22,6 @@ from llm.architecture.base import (
 @dataclass
 class VLMArgs:
     llm_args: LLMArgs
-    vit_args: ViTArgs = None
     hf_checkpoint: str = None
     image_token_index: int = 257152
     num_image_tokens: int = 256
