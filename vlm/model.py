@@ -143,6 +143,7 @@ class VLMBase:
         max_new_tokens: int,
         do_decode: bool = True,
         stop_first_eos: bool = True,
+        only_new_tokens: bool = False,
         remove_image_tokens: bool = True,
         **sampling_kwargs,
     ) -> torch.Tensor:
@@ -155,6 +156,9 @@ class VLMBase:
                 self.decode_one_token, mode="reduce-overhead", fullgraph=True
             )
             # self.prefill = torch.compile(self.prefill, fullgraph=True, dynamic=True)
+
+        if do_decode and not remove_image_tokens:
+            raise ValueError("Cannot return decoded sequence with image tokens")
 
         # Prompts and Embeddings
         if isinstance(prompt, str):
@@ -212,13 +216,14 @@ class VLMBase:
             seq[T] = next_token
             seq[T + 1 :] = torch.cat(generated_tokens)
 
+        if only_new_tokens:
+            seq = seq[T:]
+        elif remove_image_tokens:
+            seq = seq[self.text_model.config.num_image_tokens :]
+
         if do_decode:
-            seq = self.tokenizer.decode(
-                seq.tolist()[self.text_model.config.num_image_tokens :]
-            )
+            seq = self.tokenizer.decode(seq.tolist())
             return seq
-        if remove_image_tokens:
-            return seq[self.text_model.config.num_image_tokens :]
         else:
             return seq
 

@@ -149,6 +149,7 @@ class LLMBase:
         max_new_tokens: int,
         do_decode: bool = True,
         stop_first_eos: bool = True,
+        only_new_tokens: bool = False,
         clean_dialog: bool = False,
         **sampling_kwargs,
     ) -> Union[torch.Tensor, str, Dialog]:
@@ -206,6 +207,9 @@ class LLMBase:
             seq = empty
             seq[T] = next_token
             seq[T + 1 :] = torch.cat(generated_tokens)
+
+            if only_new_tokens:
+                seq = seq[T:]
 
             if do_decode:
                 seq = self.tokenizer.decode(seq.tolist())

@@ -143,13 +143,13 @@ def apply_rotary_emb(x: Tensor, freqs_cis: Tensor) -> Tensor:
     return x_out2.type_as(x)
 
 
-def sample(logits, temperature: float = 1.0, top_k: Optional[int] = None):
+def sample(logits, temperature: float = 0.8, top_k: int = 200):
     probs = logits_to_probs(logits[0, -1], temperature, top_k)
     idx_next = multinomial_sample_one_no_sync(probs)
     return idx_next, probs
 
 
-def logits_to_probs(logits, temperature: float = 1.0, top_k: Optional[int] = None):
+def logits_to_probs(logits, temperature: float = 0.8, top_k: int = 200):
     logits = logits / max(temperature, 1e-5)
 
     if top_k is not None:
